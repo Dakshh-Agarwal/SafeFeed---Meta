@@ -55,7 +55,7 @@ class ResetRequest(BaseModel):
 
 
 class StepRequest(BaseModel):
-    action: int  # post ID
+    action: int = 0  # post ID
 
 
 class RunAgentRequest(BaseModel):
@@ -109,11 +109,13 @@ def list_tasks():
 
 
 @app.post("/reset")
-def reset_env(req: ResetRequest):
+def reset_env(req: Optional[ResetRequest] = None):
     """
     Reset the shared environment to a fresh episode.
     Returns the initial state and selected task info.
     """
+    req = req or ResetRequest()
+    
     try:
         state = env.reset(task_id=req.task_id)
     except ValueError as e:
@@ -126,10 +128,12 @@ def reset_env(req: ResetRequest):
 
 
 @app.post("/step")
-def step_env(req: StepRequest):
+def step_env(req: Optional[StepRequest] = None):
     """
     Advance the shared environment by one step with the given post ID as action.
     """
+    req = req or StepRequest()
+    
     try:
         new_state, reward, done, info = env.step(req.action)
     except RuntimeError as e:
@@ -144,11 +148,13 @@ def step_env(req: StepRequest):
 
 
 @app.post("/run-agent")
-def run_agent(req: RunAgentRequest):
+def run_agent(req: Optional[RunAgentRequest] = None):
     """
     Run a full episode with either the engagement or safety agent.
     Returns trajectory, grade, and summary.
     """
+    req = req or RunAgentRequest()
+    
     if req.agent_type not in ("engagement", "safety"):
         raise HTTPException(
             status_code=400,
