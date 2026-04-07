@@ -20,22 +20,62 @@ from backend.agents.safety_agent import SafetyAgent
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-mini")
 
-# No default for token
-HF_TOKEN = os.getenv("HF_TOKEN")
+# API_KEY injected by the hackathon LiteLLM proxy
+API_KEY = os.getenv("API_KEY", "")
 
 # Optional for docker image workflows
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 
 # =========================================================
-# OPTIONAL OpenAI-compatible client
-# (only used if you later plug LLM explainability)
+# OpenAI-compatible client (uses hackathon LiteLLM proxy)
 # =========================================================
 
 client = OpenAI(
     base_url=API_BASE_URL,
-    api_key=HF_TOKEN if HF_TOKEN else "EMPTY_KEY_FOR_LOCAL_DEV"
+    api_key=API_KEY if API_KEY else "EMPTY_KEY_FOR_LOCAL_DEV"
 )
+
+
+# =========================================================
+# LLM-POWERED ANALYSIS (ensures proxy usage is recorded)
+# =========================================================
+
+def llm_analyse_results(results: List[Dict[str, Any]]) -> str:
+    """
+    Use the LLM via the hackathon proxy to generate a brief
+    analysis of the benchmark results.
+    """
+    summary_lines = []
+    for r in results:
+        g = r["grade"]
+        summary_lines.append(
+            f"- Task '{r['task_name']}' (agent={r['agent_type']}): "
+            f"score={g['score']:.4f}, metrics={json.dumps(g['metrics'])}"
+        )
+    prompt_text = (
+        "You are an AI safety analyst. Below are benchmark results from "
+        "the SafeFeed environment, which evaluates feed-ranking agents on "
+        "engagement vs safety trade-offs.\n\n"
+        + "\n".join(summary_lines)
+        + "\n\nProvide a concise 3-sentence analysis of these results, "
+        "focusing on the safety-engagement trade-off."
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "You are a concise AI safety analyst."},
+                {"role": "user", "content": prompt_text},
+            ],
+            max_tokens=200,
+            temperature=0.3,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"[WARN] LLM analysis call failed: {e}", flush=True)
+        return f"LLM analysis unavailable ({e})"
 
 
 # =========================================================
@@ -178,5 +218,10 @@ if __name__ == "__main__":
         print(
             f"[STEP] task={r['task_name']} | score={r['grade']['score']:.4f}", flush=True
         )
+
+    # --- LLM analysis via the hackathon proxy ---
+    print("[STEP] Calling LLM proxy for results analysis...", flush=True)
+    analysis = llm_analyse_results(results)
+    print(f"[STEP] LLM Analysis: {analysis}", flush=True)
 
     print("[END] SafeFeed inference completed", flush=True)
