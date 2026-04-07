@@ -1,0 +1,5 @@
+name: safefeed
+version: 1.0.0
+description: "SafeFeed: An OpenEnv-compatible benchmark environment for evaluating safety-aware feed ranking agents"
+type: environment
+entry_point: inference.py
