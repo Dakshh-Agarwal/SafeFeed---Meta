@@ -1,6 +1,9 @@
 import os
+import sys
 import json
 from typing import Dict, Any, List
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
 
 from openai import OpenAI
 
