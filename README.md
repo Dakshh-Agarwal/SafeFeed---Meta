@@ -1,3 +1,12 @@
+---
+title: SafeFeed
+emoji: 🛡️
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 # SafeFeed
 
 ## An OpenEnv-Compatible Benchmark for Evaluating Safety-Aware Feed Ranking Agents
