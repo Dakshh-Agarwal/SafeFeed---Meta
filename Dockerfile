@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY backend /app/backend
 
-RUN pip install --no-cache-dir fastapi uvicorn pydantic
+RUN pip install --no-cache-dir fastapi uvicorn pydantic openai
 
 EXPOSE 7860
 
