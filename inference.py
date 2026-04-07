@@ -69,7 +69,7 @@ def run_single_task(task_id: int = 0, agent_type: str = "safety", steps: int = 2
 
     task_name = env.task_config["name"]
 
-    print(f"START: task={task_name} | agent={agent_type} | max_steps={steps}")
+    print(f"[START] task={task_name} | agent={agent_type} | max_steps={steps}", flush=True)
 
     done = False
     step_count = 0
@@ -85,15 +85,15 @@ def run_single_task(task_id: int = 0, agent_type: str = "safety", steps: int = 2
         category = post.get("category", "NA")
 
         print(
-            f"STEP: task={task_name} | step={step_count} | "
-            f"post_id={post_id} | category={category} | reward={reward:.4f}"
+            f"[STEP] task={task_name} | step={step_count} | "
+            f"post_id={post_id} | category={category} | reward={reward:.4f}", flush=True
         )
 
     grade = env.grade()
 
     print(
-        f"END: task={task_name} | agent={agent_type} | "
-        f"score={grade['score']:.4f}"
+        f"[END] task={task_name} | agent={agent_type} | "
+        f"score={grade['score']:.4f}", flush=True
     )
 
     return {
@@ -165,18 +165,18 @@ def compare_agents(steps: int = 20) -> Dict[str, Any]:
 # =========================================================
 
 if __name__ == "__main__":
-    print("START: SafeFeed inference validation run")
+    print("[START] SafeFeed inference validation run", flush=True)
 
     tasks = get_tasks()
-    print(f"STEP: total_tasks={len(tasks)}")
+    print(f"[STEP] total_tasks={len(tasks)}", flush=True)
 
     results = run_all_tasks(agent_type="safety", steps=20)
 
-    print("STEP: completed safety-agent run across all tasks")
+    print("[STEP] completed safety-agent run across all tasks", flush=True)
 
     for r in results:
         print(
-            f"STEP: task={r['task_name']} | score={r['grade']['score']:.4f}"
+            f"[STEP] task={r['task_name']} | score={r['grade']['score']:.4f}", flush=True
         )
 
-    print("END: SafeFeed inference completed")
+    print("[END] SafeFeed inference completed", flush=True)
