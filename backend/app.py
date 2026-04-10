@@ -40,8 +40,8 @@ def _first_env(*names: str, default: str = "") -> str:
 
 
 MODEL_NAME = _first_env("MODEL_NAME", "OPENAI_MODEL", default="gpt-4.1-mini")
-SCORE_MIN = 0.0001
-SCORE_MAX = 0.9999
+SCORE_MIN = 0.01
+SCORE_MAX = 0.99
 
 
 def _get_client() -> OpenAI:

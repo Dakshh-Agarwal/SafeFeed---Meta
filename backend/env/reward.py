@@ -13,8 +13,8 @@ LAMBDA2 = 1.5   # spiral risk penalty weight
 LAMBDA3 = 1.2   # repetition penalty weight
 LAMBDA4 = 1.0   # diversity bonus weight
 
-SCORE_MIN = 0.0001
-SCORE_MAX = 0.9999
+SCORE_MIN = 0.01
+SCORE_MAX = 0.99
 
 
 def _to_unit_reward(value: float) -> float:
@@ -87,10 +87,10 @@ def compute_reward(post: dict, state: dict, task_config: dict) -> tuple:
     reward = _to_unit_reward(reward)
 
     submetrics = {
-        "engagement":         round(engagement, 4),
-        "spiral_risk":        round(spiral_risk, 4),
-        "repetition_penalty": round(repetition_penalty, 4),
-        "diversity_bonus":    round(diversity_bonus, 4),
+        "engagement":         max(SCORE_MIN, min(SCORE_MAX, round(engagement, 4))),
+        "spiral_risk":        max(SCORE_MIN, min(SCORE_MAX, round(spiral_risk, 4))),
+        "repetition_penalty": max(SCORE_MIN, min(SCORE_MAX, round(repetition_penalty, 4))),
+        "diversity_bonus":    max(SCORE_MIN, min(SCORE_MAX, round(diversity_bonus, 4))),
     }
 
     return reward, submetrics

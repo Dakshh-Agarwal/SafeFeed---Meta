@@ -6,8 +6,8 @@ Miscellaneous utility functions for SafeFeed backend.
 
 import random
 
-SCORE_MIN = 0.0001
-SCORE_MAX = 0.9999
+SCORE_MIN = 0.01
+SCORE_MAX = 0.99
 
 
 def pick_candidate_posts(content_pool: list, n: int = 10, seed: int = None) -> list:

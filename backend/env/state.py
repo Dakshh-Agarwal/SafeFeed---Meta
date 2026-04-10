@@ -5,8 +5,8 @@ Session state model for a simulated feed session.
 Tracks engagement, safety signals, and diversity metrics.
 """
 
-SCORE_MIN = 0.0001
-SCORE_MAX = 0.9999
+SCORE_MIN = 0.01
+SCORE_MAX = 0.99
 
 
 def init_state() -> dict:

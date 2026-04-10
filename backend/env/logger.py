@@ -5,8 +5,8 @@ Trajectory logger for the SafeFeed environment.
 Records every step for debugging, charting, and grading.
 """
 
-SCORE_MIN = 0.0001
-SCORE_MAX = 0.9999
+SCORE_MIN = 0.01
+SCORE_MAX = 0.99
 
 
 class TrajectoryLogger:
@@ -38,21 +38,30 @@ class TrajectoryLogger:
                 v = v / 10.0
             return max(SCORE_MIN, min(SCORE_MAX, v))
 
+        # Sanitize reward_breakdown values too
+        raw_breakdown = data.get("reward_breakdown", {})
+        safe_breakdown = {}
+        for k, v in raw_breakdown.items():
+            if isinstance(v, (int, float)):
+                safe_breakdown[k] = _avoid_unit_edges(v)
+            else:
+                safe_breakdown[k] = v
+
         # Ensure all required fields have defaults if caller missed any
         record = {
             "step":              data.get("step", len(self._trajectory) + 1),
             "post_id":           data.get("post_id"),
             "title":             data.get("title", ""),
             "category":          data.get("category", ""),
-            "engagement_score":  _avoid_unit_edges(float(data.get("engagement_score", 0.0)) / 10.0),
-            "risk_score":        _avoid_unit_edges(data.get("risk_score", 0.0)),
+            "engagement_score":  _avoid_unit_edges(data.get("engagement_score", 0.5)),
+            "risk_score":        _avoid_unit_edges(data.get("risk_score", 0.5)),
             "reward":            _avoid_unit_edges(data.get("reward", 0.5)),
             "watch_time":        data.get("watch_time", 0),
             "spiral_risk":       _avoid_unit_edges(data.get("spiral_risk", 0.5)),
-            "repetition_score":  _avoid_unit_edges(data.get("repetition_score", 0.0)),
-            "diversity_score":   _avoid_unit_edges(data.get("diversity_score", 0.9999)),
+            "repetition_score":  _avoid_unit_edges(data.get("repetition_score", 0.5)),
+            "diversity_score":   _avoid_unit_edges(data.get("diversity_score", 0.5)),
             # Optional: reward submetrics from reward.py
-            "reward_breakdown":  data.get("reward_breakdown", {}),
+            "reward_breakdown":  safe_breakdown,
         }
         self._trajectory.append(record)
 

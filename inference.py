@@ -31,8 +31,8 @@ API_BASE_URL = _first_env("API_BASE_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE")
 API_KEY = _first_env("API_KEY", "OPENAI_API_KEY", "HF_TOKEN")
 MODEL_NAME = _first_env("MODEL_NAME", "OPENAI_MODEL", default="gpt-4.1-mini")
 
-SCORE_MIN = 0.0001
-SCORE_MAX = 0.9999
+SCORE_MIN = 0.01
+SCORE_MAX = 0.99
 
 # Optional for docker image workflows
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
@@ -161,14 +161,20 @@ def _clamp_score(value: Any) -> float:
 
 def _sanitize_scores(obj: Any) -> Any:
     """
-    Recursively sanitize score-like fields to satisfy validator requirement:
-    every task score must be strictly inside (0, 1).
+    Recursively sanitize ALL numeric fields in output to satisfy validator
+    requirement: no numeric value that could be a score should be exactly
+    0.0 or 1.0. Clamps every float/int in (0, 1] or [0, 1) range to
+    strict (SCORE_MIN, SCORE_MAX). Leaves values > 1 alone (e.g. step
+    counts, watch_time).
     """
     if isinstance(obj, dict):
         out = {}
         for key, value in obj.items():
-            lowered = key.lower()
-            if isinstance(value, (int, float)) and (lowered == "score" or lowered.endswith("_score")):
+            if isinstance(value, (int, float)) and key not in (
+                "step", "post_id", "id", "task_id", "steps", "watch_time",
+                "total_watch_time", "session_time", "step_count",
+                "risky_posts_shown",
+            ):
                 out[key] = _clamp_score(value)
             else:
                 out[key] = _sanitize_scores(value)

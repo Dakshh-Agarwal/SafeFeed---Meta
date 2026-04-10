@@ -8,8 +8,8 @@ Produces validator-safe scores strictly in (0, 1) — never 0.0 or 1.0.
 import math
 
 
-SCORE_MIN = 0.0001
-SCORE_MAX = 0.9999
+SCORE_MIN = 0.01
+SCORE_MAX = 0.99
 
 
 def safe_score(x: float) -> float:
