@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy only runtime files
 COPY backend /app/backend
 COPY server /app/server
+COPY tasks /app/tasks
 COPY inference.py /app/inference.py
 COPY openenv.yaml /app/openenv.yaml
 COPY README.md /app/README.md

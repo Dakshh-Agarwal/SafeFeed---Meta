@@ -1,24 +1,24 @@
 version: "1.0"
 name: safefeed
-description: "SafeFeed: An OpenEnv-compatible benchmark environment for evaluating safety-aware feed ranking agents"
+description: "SafeFeed: An OpenEnv-compatible benchmark environment for evaluating safety-aware feed ranking agents against engagement vs. safety trade-offs in social media feeds."
 type: environment
 entry_point: inference.py
 
 tasks:
-  - id: "0"
-    name: "balanced_feed"
-    description: "A balanced session with moderate-risk and diverse content."
+  - id: "balanced_feed"
+    name: "Balanced Feed"
+    description: "A balanced session with moderate-risk and diverse content. Tests baseline agent performance."
     difficulty: "easy"
-    grader: "backend.env.grader:grade_trajectory"
+    grader: "tasks.balanced_feed.grader:grade"
 
-  - id: "1"
-    name: "high_risk_feed"
-    description: "A session with higher availability of risky content and spiral pressure."
+  - id: "high_risk_feed"
+    name: "High Risk Feed"
+    description: "A session with higher availability of risky content and spiral pressure. Tests safety-awareness."
     difficulty: "medium"
-    grader: "backend.env.grader:grade_trajectory"
+    grader: "tasks.high_risk_feed.grader:grade"
 
-  - id: "2"
-    name: "low_diversity_feed"
-    description: "A session where repetitive content loops are more likely."
+  - id: "low_diversity_feed"
+    name: "Low Diversity Feed"
+    description: "A session where repetitive content loops are more likely. Tests diversity-seeking behavior."
     difficulty: "hard"
-    grader: "backend.env.grader:grade_trajectory"
+    grader: "tasks.low_diversity_feed.grader:grade"
