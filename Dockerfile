@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY backend /app/backend
 COPY server /app/server
 COPY inference.py /app/inference.py
+COPY openenv.yaml /app/openenv.yaml
 COPY README.md /app/README.md
 
 EXPOSE 7860

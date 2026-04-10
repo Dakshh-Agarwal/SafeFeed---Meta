@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import math
 from typing import Dict, Any, List
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
@@ -39,6 +40,15 @@ LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 
 # =========================================================
+# Helpers: stderr logging (keep stdout clean for validator)
+# =========================================================
+
+def _log(msg: str) -> None:
+    """Print diagnostic message to STDERR only (never stdout)."""
+    print(msg, file=sys.stderr, flush=True)
+
+
+# =========================================================
 # OpenAI-compatible client (uses hackathon LiteLLM proxy)
 # =========================================================
 
@@ -50,8 +60,8 @@ def _get_client() -> OpenAI:
     base = _first_env("API_BASE_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE", default=API_BASE_URL)
     key = _first_env("API_KEY", "OPENAI_API_KEY", "HF_TOKEN", default=API_KEY)
 
-    print(f"[DEBUG] API_BASE_URL = {base!r}", flush=True)
-    print(f"[DEBUG] API_KEY      = {key[:8]}..." if len(key) > 8 else f"[DEBUG] API_KEY = {key!r}", flush=True)
+    _log(f"[DEBUG] API_BASE_URL = {base!r}")
+    _log(f"[DEBUG] API_KEY      = {key[:8]}..." if len(key) > 8 else f"[DEBUG] API_KEY = {key!r}")
 
     if not base:
         raise RuntimeError(
@@ -63,6 +73,56 @@ def _get_client() -> OpenAI:
         )
 
     return OpenAI(base_url=base, api_key=key)
+
+
+# =========================================================
+# SCORE SAFETY UTILITIES
+# =========================================================
+
+def _clamp(value: Any) -> float:
+    """Coerce a numeric-like value to strict open interval (0, 1)."""
+    try:
+        v = float(value)
+    except Exception:
+        return 0.5
+    if not math.isfinite(v):
+        return 0.5
+    if v <= 0.0:
+        return SCORE_MIN
+    if v >= 1.0:
+        return SCORE_MAX
+    return round(max(SCORE_MIN, min(SCORE_MAX, v)), 6)
+
+
+def _sanitize(obj: Any) -> Any:
+    """
+    Recursively sanitize ALL numeric fields in output to satisfy validator
+    requirement: no numeric value that could be interpreted as a score
+    should be exactly 0.0 or 1.0. Clamps every float/int to strict
+    (SCORE_MIN, SCORE_MAX). Leaves integer-ID-like fields alone.
+    """
+    # Keys that are definitely NOT scores (integer IDs, counters, timings)
+    SKIP_KEYS = frozenset({
+        "step", "post_id", "id", "task_id", "steps", "watch_time",
+        "total_watch_time", "session_time", "step_count",
+        "risky_posts_shown",
+    })
+
+    if isinstance(obj, dict):
+        out = {}
+        for key, value in obj.items():
+            if isinstance(value, (int, float)) and key not in SKIP_KEYS:
+                out[key] = _clamp(value)
+            elif isinstance(value, (dict, list)):
+                out[key] = _sanitize(value)
+            else:
+                out[key] = value
+        return out
+
+    if isinstance(obj, list):
+        return [_sanitize(item) for item in obj]
+
+    return obj
 
 
 # =========================================================
@@ -110,7 +170,7 @@ def llm_warmup_call() -> str:
     validator sees at least one proxy hit even if later calls fail.
     """
     client = _get_client()
-    print("[STEP] Making warmup LLM call through proxy...", flush=True)
+    _log("[STEP] Making warmup LLM call through proxy...")
 
     response = client.chat.completions.create(
         model=MODEL_NAME,
@@ -121,7 +181,7 @@ def llm_warmup_call() -> str:
         temperature=0.0,
     )
     result = response.choices[0].message.content.strip()
-    print(f"[STEP] Warmup LLM response: {result}", flush=True)
+    _log(f"[STEP] Warmup LLM response: {result}")
     return result
 
 
@@ -146,46 +206,6 @@ def get_agent(agent_type: str):
     return SafetyAgent()
 
 
-def _clamp_score(value: Any) -> float:
-    """Coerce a numeric-like value to strict open interval (0,1)."""
-    try:
-        v = float(value)
-    except Exception:
-        return 0.5
-    if v <= 0.0:
-        return SCORE_MIN
-    if v >= 1.0:
-        return SCORE_MAX
-    return max(SCORE_MIN, min(SCORE_MAX, v))
-
-
-def _sanitize_scores(obj: Any) -> Any:
-    """
-    Recursively sanitize ALL numeric fields in output to satisfy validator
-    requirement: no numeric value that could be a score should be exactly
-    0.0 or 1.0. Clamps every float/int in (0, 1] or [0, 1) range to
-    strict (SCORE_MIN, SCORE_MAX). Leaves values > 1 alone (e.g. step
-    counts, watch_time).
-    """
-    if isinstance(obj, dict):
-        out = {}
-        for key, value in obj.items():
-            if isinstance(value, (int, float)) and key not in (
-                "step", "post_id", "id", "task_id", "steps", "watch_time",
-                "total_watch_time", "session_time", "step_count",
-                "risky_posts_shown",
-            ):
-                out[key] = _clamp_score(value)
-            else:
-                out[key] = _sanitize_scores(value)
-        return out
-
-    if isinstance(obj, list):
-            return [_sanitize_scores(item) for item in obj]
-
-    return obj
-
-
 def run_single_task(task_id: int = 0, agent_type: str = "safety", steps: int = 20) -> Dict[str, Any]:
     """
     Run one task with one agent and return structured results.
@@ -196,7 +216,8 @@ def run_single_task(task_id: int = 0, agent_type: str = "safety", steps: int = 2
 
     task_name = env.task_config["name"]
 
-    print(f"[START] task={task_name} | agent={agent_type} | max_steps={steps}", flush=True)
+    # Log to stderr only
+    _log(f"[START] task={task_name} | agent={agent_type} | max_steps={steps}")
 
     done = False
     step_count = 0
@@ -211,33 +232,32 @@ def run_single_task(task_id: int = 0, agent_type: str = "safety", steps: int = 2
         post_id = post.get("id", "NA")
         category = post.get("category", "NA")
 
-        print(
+        _log(
             f"[STEP] task={task_name} | step={step_count} | "
-            f"post_id={post_id} | category={category} | reward={reward:.4f}", flush=True
+            f"post_id={post_id} | category={category} | reward={reward:.4f}"
         )
 
     grade = env.grade()
-    grade["score"] = safe_score(grade.get("score", 0.5))
+    grade["score"] = _clamp(grade.get("score", 0.5))
     metrics = grade.get("metrics")
     if isinstance(metrics, dict):
         for key, value in list(metrics.items()):
-            metrics[key] = safe_score(value)
-    grade = _sanitize_scores(grade)
+            metrics[key] = _clamp(value)
+    grade = _sanitize(grade)
 
-    print(
+    _log(
         f"[END] task={task_name} | agent={agent_type} | "
-        f"score={grade['score']:.4f}", flush=True
+        f"score={grade['score']:.4f}"
     )
 
     result = {
         "task_id": task_id,
         "task_name": task_name,
         "agent_type": agent_type,
-        "trajectory": env.get_trajectory(),
         "grade": grade
     }
 
-    return _sanitize_scores(result)
+    return _sanitize(result)
 
 
 def run_all_tasks(agent_type: str = "safety", steps: int = 20) -> List[Dict[str, Any]]:
@@ -255,7 +275,7 @@ def run_all_tasks(agent_type: str = "safety", steps: int = 20) -> List[Dict[str,
         )
         results.append(result)
 
-    return _sanitize_scores(results)
+    return _sanitize(results)
 
 
 def compare_agents(steps: int = 20) -> Dict[str, Any]:
@@ -292,7 +312,7 @@ def compare_agents(steps: int = 20) -> Dict[str, Any]:
             }
         })
 
-    return _sanitize_scores({"tasks": comparison})
+    return _sanitize({"tasks": comparison})
 
 
 # =========================================================
@@ -300,41 +320,71 @@ def compare_agents(steps: int = 20) -> Dict[str, Any]:
 # =========================================================
 
 if __name__ == "__main__":
-    print("[START] SafeFeed inference validation run", flush=True)
+    # ---- ALL diagnostic output goes to stderr ----
+    _log("[START] SafeFeed inference validation run")
 
     try:
         # ---- FIRST: Make an LLM call through the proxy ----
-        # This guarantees the LiteLLM key shows activity.
-        print("[STEP] Verifying LLM proxy connectivity...", flush=True)
+        _log("[STEP] Verifying LLM proxy connectivity...")
         try:
             llm_warmup_call()
-            print("[STEP] ✅ LLM proxy warmup succeeded", flush=True)
+            _log("[STEP] ✅ LLM proxy warmup succeeded")
         except Exception as e:
-            print(f"[WARN] LLM proxy warmup failed: {e}", flush=True)
+            _log(f"[WARN] LLM proxy warmup failed: {e}")
 
         # ---- Run benchmark tasks ----
         tasks = get_tasks()
-        print(f"[STEP] total_tasks={len(tasks)}", flush=True)
+        _log(f"[STEP] total_tasks={len(tasks)}")
 
         results = run_all_tasks(agent_type="safety", steps=20)
 
-        print("[STEP] completed safety-agent run across all tasks", flush=True)
+        _log("[STEP] completed safety-agent run across all tasks")
+
+        # ---- STDOUT: Print required [START]/[STEP]/[END] tags ----
+        # These are the ONLY lines on stdout that the validator parses.
+        print("[START] SafeFeed benchmark", flush=True)
 
         for r in results:
+            score = _clamp(r["grade"]["score"])
             print(
-                f"[STEP] task={r['task_name']} | score={r['grade']['score']:.4f}", flush=True
+                f"[STEP] task={r['task_name']} | score={score:.4f}",
+                flush=True
+            )
+            _log(
+                f"[STEP] task={r['task_name']} | score={score:.4f}"
             )
 
+        print("[END] SafeFeed benchmark", flush=True)
+
+        # ---- STDOUT: Print the final JSON result ----
+        # Build a minimal, clean JSON array with only the fields
+        # the validator needs: task_name and score.
+        output_tasks = []
+        for r in results:
+            score = round(_clamp(r["grade"]["score"]), 4)
+            output_tasks.append({
+                "task_name": r["task_name"],
+                "task_id": r["task_id"],
+                "score": score,
+                "metrics": {
+                    k: round(_clamp(v), 4)
+                    for k, v in r["grade"].get("metrics", {}).items()
+                    if isinstance(v, (int, float))
+                }
+            })
+
+        # Print the final JSON to stdout (validator may parse this)
+        print(json.dumps(output_tasks), flush=True)
+
         # ---- LLM analysis via the hackathon proxy ----
-        print("[STEP] Calling LLM proxy for results analysis...", flush=True)
+        _log("[STEP] Calling LLM proxy for results analysis...")
         try:
             analysis = llm_analyse_results(results)
-            print(f"[STEP] LLM Analysis: {analysis}", flush=True)
+            _log(f"[STEP] LLM Analysis: {analysis}")
         except Exception as e:
-            print(f"[WARN] LLM analysis call failed: {e}", flush=True)
+            _log(f"[WARN] LLM analysis call failed: {e}")
 
     except Exception as e:
-        print(f"[ERROR] Inference run failed: {e}", flush=True)
+        _log(f"[ERROR] Inference run failed: {e}")
 
-    print("[END] SafeFeed inference completed", flush=True)
-
+    _log("[END] SafeFeed inference completed")
