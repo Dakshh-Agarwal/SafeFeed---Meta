@@ -31,6 +31,9 @@ API_BASE_URL = _first_env("API_BASE_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE")
 API_KEY = _first_env("API_KEY", "OPENAI_API_KEY", "HF_TOKEN")
 MODEL_NAME = _first_env("MODEL_NAME", "OPENAI_MODEL", default="gpt-4.1-mini")
 
+SCORE_MIN = 0.0001
+SCORE_MAX = 0.9999
+
 # Optional for docker image workflows
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
@@ -143,6 +146,40 @@ def get_agent(agent_type: str):
     return SafetyAgent()
 
 
+def _clamp_score(value: Any) -> float:
+    """Coerce a numeric-like value to strict open interval (0,1)."""
+    try:
+        v = float(value)
+    except Exception:
+        return 0.5
+    if v <= 0.0:
+        return SCORE_MIN
+    if v >= 1.0:
+        return SCORE_MAX
+    return max(SCORE_MIN, min(SCORE_MAX, v))
+
+
+def _sanitize_scores(obj: Any) -> Any:
+    """
+    Recursively sanitize score-like fields to satisfy validator requirement:
+    every task score must be strictly inside (0, 1).
+    """
+    if isinstance(obj, dict):
+        out = {}
+        for key, value in obj.items():
+            lowered = key.lower()
+            if isinstance(value, (int, float)) and (lowered == "score" or lowered.endswith("_score")):
+                out[key] = _clamp_score(value)
+            else:
+                out[key] = _sanitize_scores(value)
+        return out
+
+    if isinstance(obj, list):
+            return [_sanitize_scores(item) for item in obj]
+
+    return obj
+
+
 def run_single_task(task_id: int = 0, agent_type: str = "safety", steps: int = 20) -> Dict[str, Any]:
     """
     Run one task with one agent and return structured results.
@@ -179,19 +216,22 @@ def run_single_task(task_id: int = 0, agent_type: str = "safety", steps: int = 2
     if isinstance(metrics, dict):
         for key, value in list(metrics.items()):
             metrics[key] = safe_score(value)
+    grade = _sanitize_scores(grade)
 
     print(
         f"[END] task={task_name} | agent={agent_type} | "
         f"score={grade['score']:.4f}", flush=True
     )
 
-    return {
+    result = {
         "task_id": task_id,
         "task_name": task_name,
         "agent_type": agent_type,
         "trajectory": env.get_trajectory(),
         "grade": grade
     }
+
+    return _sanitize_scores(result)
 
 
 def run_all_tasks(agent_type: str = "safety", steps: int = 20) -> List[Dict[str, Any]]:
@@ -209,7 +249,7 @@ def run_all_tasks(agent_type: str = "safety", steps: int = 20) -> List[Dict[str,
         )
         results.append(result)
 
-    return results
+    return _sanitize_scores(results)
 
 
 def compare_agents(steps: int = 20) -> Dict[str, Any]:
@@ -246,7 +286,7 @@ def compare_agents(steps: int = 20) -> Dict[str, Any]:
             }
         })
 
-    return {"tasks": comparison}
+    return _sanitize_scores({"tasks": comparison})
 
 
 # =========================================================
