@@ -6,6 +6,9 @@ Miscellaneous utility functions for SafeFeed backend.
 
 import random
 
+SCORE_MIN = 0.0001
+SCORE_MAX = 0.9999
+
 
 def pick_candidate_posts(content_pool: list, n: int = 10, seed: int = None) -> list:
     """
@@ -33,8 +36,8 @@ def normalise(value: float, lo: float = 0.0, hi: float = 10.0) -> float:
     Clamps to [0, 1] if out of range.
     """
     if hi == lo:
-        return 0.0
-    return max(0.0, min(1.0, (value - lo) / (hi - lo)))
+        return 0.5
+    return max(SCORE_MIN, min(SCORE_MAX, (value - lo) / (hi - lo)))
 
 
 def summarise_trajectory(trajectory: list) -> dict:
@@ -48,15 +51,26 @@ def summarise_trajectory(trajectory: list) -> dict:
         return {}
 
     n = len(trajectory)
+    avg_engagement = sum(s["engagement_score"] for s in trajectory) / n
+    avg_risk = sum(s["risk_score"] for s in trajectory) / n
+    avg_reward = sum(s["reward"] for s in trajectory) / n
+
+    avg_engagement = avg_engagement / 10.0 if avg_engagement > 1.0 else avg_engagement
+    avg_risk = avg_risk / 10.0 if avg_risk > 1.0 else avg_risk
+    avg_reward = avg_reward / 10.0 if avg_reward > 1.0 else avg_reward
+
+    final_spiral = trajectory[-1]["spiral_risk"]
+    final_spiral = final_spiral / 10.0 if final_spiral > 1.0 else final_spiral
+
     return {
         "steps":               n,
         "total_watch_time":    trajectory[-1]["watch_time"] if trajectory else 0,
-        "avg_engagement":      round(sum(s["engagement_score"] for s in trajectory) / n, 3),
-        "avg_risk":            round(sum(s["risk_score"]       for s in trajectory) / n, 3),
-        "avg_reward":          round(sum(s["reward"]           for s in trajectory) / n, 3),
-        "final_spiral_risk":   round(trajectory[-1]["spiral_risk"],    3),
-        "final_repetition":    round(trajectory[-1]["repetition_score"], 3),
-        "final_diversity":     round(trajectory[-1]["diversity_score"],  3),
+        "avg_engagement":      max(SCORE_MIN, min(SCORE_MAX, avg_engagement)),
+        "avg_risk":            max(SCORE_MIN, min(SCORE_MAX, avg_risk)),
+        "avg_reward":          max(SCORE_MIN, min(SCORE_MAX, avg_reward)),
+        "final_spiral_risk":   max(SCORE_MIN, min(SCORE_MAX, final_spiral)),
+        "final_repetition":    max(SCORE_MIN, min(SCORE_MAX, trajectory[-1]["repetition_score"])),
+        "final_diversity":     max(SCORE_MIN, min(SCORE_MAX, trajectory[-1]["diversity_score"])),
         "categories_seen":     list({s["category"] for s in trajectory}),
-        "risky_posts_shown":   sum(1 for s in trajectory if s["risk_score"] >= 5.0),
+        "risky_posts_shown":   sum(1 for s in trajectory if s["risk_score"] >= 0.5),
     }

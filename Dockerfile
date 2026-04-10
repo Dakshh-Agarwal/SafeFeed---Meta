@@ -1,10 +1,22 @@
-FROM python:3.10
+FROM python:3.10-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY backend /app/backend
+# Copy dependency files first for build cache
+COPY requirements.txt /app/requirements.txt
 
-RUN pip install --no-cache-dir fastapi uvicorn pydantic openai
+# Install Python deps
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy only runtime files
+COPY backend /app/backend
+COPY server /app/server
+COPY inference.py /app/inference.py
+COPY README.md /app/README.md
 
 EXPOSE 7860
 

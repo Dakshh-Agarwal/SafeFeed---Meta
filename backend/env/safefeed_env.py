@@ -10,7 +10,7 @@ from env.state import init_state, update_state
 from env.tasks import get_all_tasks, get_task_by_id
 from env.reward import compute_reward
 from env.logger import TrajectoryLogger
-from env.grader import grade_trajectory
+from env.grader import grade_trajectory, safe_score
 from utils.explain import explain_recommendation
 
 
@@ -40,6 +40,28 @@ class SafeFeedEnv:
         self.logger = TrajectoryLogger()
         self._done: bool = False
 
+    @staticmethod
+    def _unit_score(value: float, scale10: bool = False) -> float:
+        """Convert numeric score-like signals to strict (0,1)."""
+        try:
+            v = float(value)
+        except Exception:
+            return 0.5
+        if scale10:
+            v = v / 10.0
+        return safe_score(v)
+
+    def _public_state(self) -> dict:
+        """Return a validator-safe state snapshot without mutating internal state."""
+        out = dict(self.state)
+        if "repetition_score" in out:
+            out["repetition_score"] = self._unit_score(out.get("repetition_score", 0.5), scale10=True)
+        if "diversity_score" in out:
+            out["diversity_score"] = self._unit_score(out.get("diversity_score", 0.5))
+        if "spiral_risk" in out:
+            out["spiral_risk"] = self._unit_score(out.get("spiral_risk", 0.5), scale10=True)
+        return out
+
     # ------------------------------------------------------------------ #
     # PUBLIC API
     # ------------------------------------------------------------------ #
@@ -62,7 +84,7 @@ class SafeFeedEnv:
         self.state = init_state()
         self.logger.reset()
         self._done = False
-        return dict(self.state)
+        return self._public_state()
 
     def step(self, action: int) -> tuple:
         """
@@ -92,14 +114,18 @@ class SafeFeedEnv:
         # Build explanation
         explanation = explain_recommendation(self.state, post, agent_type="env")
 
+        info_post = dict(post)
+        info_post["engagement_score"] = self._unit_score(post.get("engagement_score", 0.5), scale10=True)
+        info_post["risk_score"] = self._unit_score(post.get("risk_score", 0.5), scale10=True)
+
         # Log this step
         self.logger.log_step({
             "step":             self.state["step_count"],
-            "post_id":          post["id"],
-            "title":            post["title"],
-            "category":         post["category"],
-            "engagement_score": post["engagement_score"],
-            "risk_score":       post["risk_score"],
+            "post_id":          info_post["id"],
+            "title":            info_post["title"],
+            "category":         info_post["category"],
+            "engagement_score": info_post["engagement_score"],
+            "risk_score":       info_post["risk_score"],
             "reward":           reward,
             "watch_time":       self.state["watch_time"],
             "spiral_risk":      self.state["spiral_risk"],
@@ -111,14 +137,21 @@ class SafeFeedEnv:
         # Done condition
         self._done = self.state["step_count"] >= self.max_steps
 
+        public_reward_breakdown = {}
+        for key, value in reward_breakdown.items():
+            if isinstance(value, (int, float)):
+                public_reward_breakdown[key] = self._unit_score(value, scale10=(float(value) > 1.0))
+            else:
+                public_reward_breakdown[key] = value
+
         info = {
-            "post":             post,
+            "post":             info_post,
             "explanation":      explanation,
-            "reward_breakdown": reward_breakdown,
+            "reward_breakdown": public_reward_breakdown,
             "task":             self.task_config,
         }
 
-        return dict(self.state), reward, self._done, info
+        return self._public_state(), reward, self._done, info
 
     def grade(self, trajectory: list = None, task_id: int = None) -> dict:
         """
@@ -133,7 +166,16 @@ class SafeFeedEnv:
         """
         traj = trajectory if trajectory is not None else self.logger.get_trajectory()
         cfg  = get_task_by_id(task_id) if task_id is not None else self.task_config
-        return grade_trajectory(traj, cfg)
+        result = grade_trajectory(traj, cfg)
+
+        # Final guard at env boundary to guarantee validator-safe range.
+        result["score"] = safe_score(result.get("score", 0.5))
+        metrics = result.get("metrics")
+        if isinstance(metrics, dict):
+            for key, value in list(metrics.items()):
+                metrics[key] = safe_score(value)
+
+        return result
 
     def get_trajectory(self) -> list:
         """Return the full logged trajectory for the current episode."""

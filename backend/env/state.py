@@ -5,6 +5,9 @@ Session state model for a simulated feed session.
 Tracks engagement, safety signals, and diversity metrics.
 """
 
+SCORE_MIN = 0.0001
+SCORE_MAX = 0.9999
+
 
 def init_state() -> dict:
     """
@@ -25,9 +28,9 @@ def init_state() -> dict:
         "watch_time": 0,         # total simulated watch seconds
 
         # Safety / quality signals
-        "spiral_risk": 0.0,      # 0-10 scale; higher = more at-risk
-        "repetition_score": 0.0, # 0-10 scale; higher = more repetitive
-        "diversity_score": 1.0,  # 0-1 scale; higher = more diverse
+        "spiral_risk": 0.0,         # 0-10 scale; higher = more at-risk
+        "repetition_score": SCORE_MIN, # avoid exact 0.0 boundary leaks
+        "diversity_score": SCORE_MAX,  # avoid exact 1.0 boundary leaks
 
         # Recent history for locality-aware computations
         "recent_categories": [], # rolling window of last N categories seen
@@ -94,14 +97,15 @@ def update_state(state: dict, post: dict, task_config: dict) -> dict:
     state["repetition_score"] = min(10.0, state["repetition_score"] + repetition_delta * 0.8)
     if category_freq == 1:
         # new category in window — reduce repetition
-        state["repetition_score"] = max(0.0, state["repetition_score"] - 0.2)
+        state["repetition_score"] = max(SCORE_MIN, state["repetition_score"] - 0.2)
+    state["repetition_score"] = max(SCORE_MIN, min(10.0, state["repetition_score"]))
 
     # --- Diversity score ---
     unique_cats = len(set(state["recent_categories"]))
     diversity_pressure = task_config.get("diversity_pressure", 0.3)
     state["diversity_score"] = max(
-        0.01,
-        min(1.0, unique_cats / max(1, len(state["recent_categories"])) - 0.05 * diversity_pressure)
+        SCORE_MIN,
+        min(SCORE_MAX, unique_cats / max(1, len(state["recent_categories"])) - 0.05 * diversity_pressure)
     )
 
     return state

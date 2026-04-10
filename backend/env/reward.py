@@ -5,11 +5,28 @@ Reward function for the SafeFeed environment.
 Balances engagement against safety and diversity signals.
 """
 
+import math
+
 # Lambda weights for the reward formula
 LAMBDA1 = 1.0   # engagement weight
 LAMBDA2 = 1.5   # spiral risk penalty weight
 LAMBDA3 = 1.2   # repetition penalty weight
 LAMBDA4 = 1.0   # diversity bonus weight
+
+SCORE_MIN = 0.0001
+SCORE_MAX = 0.9999
+
+
+def _to_unit_reward(value: float) -> float:
+    """Map raw reward to strict (0,1) using a smooth sigmoid squash."""
+    try:
+        v = float(value)
+    except Exception:
+        return 0.5
+    if not math.isfinite(v):
+        return 0.5
+    squashed = 1.0 / (1.0 + math.exp(-v))
+    return max(SCORE_MIN, min(SCORE_MAX, squashed))
 
 
 def compute_reward(post: dict, state: dict, task_config: dict) -> tuple:
@@ -66,8 +83,8 @@ def compute_reward(post: dict, state: dict, task_config: dict) -> tuple:
         + LAMBDA4 * diversity_bonus
     )
 
-    # Round for readability
-    reward = round(reward, 4)
+    # Final reward emitted by the environment must stay strictly in (0,1).
+    reward = _to_unit_reward(reward)
 
     submetrics = {
         "engagement":         round(engagement, 4),
